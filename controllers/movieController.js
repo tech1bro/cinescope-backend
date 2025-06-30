@@ -1,0 +1,213 @@
+import axios from 'axios';
+import Movie from '../models/Movie.js';
+
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+
+// Helper function to make TMDB API requests
+const tmdbRequest = async (endpoint, params = {}) => {
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}${endpoint}`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        ...params
+      }
+    });
+    return response.data;
+  } catch (error) {
+    throw new Error(`TMDB API Error: ${error.message}`);
+  }
+};
+
+// Helper function to save/update movie in database
+const saveMovieToDb = async (tmdbMovie) => {
+  try {
+    const movieData = {
+      tmdbId: tmdbMovie.id,
+      title: tmdbMovie.title,
+      overview: tmdbMovie.overview,
+      releaseDate: tmdbMovie.release_date ? new Date(tmdbMovie.release_date) : null,
+      runtime: tmdbMovie.runtime,
+      genres: tmdbMovie.genres || tmdbMovie.genre_ids?.map(id => ({ id, name: '' })),
+      posterPath: tmdbMovie.poster_path,
+      backdropPath: tmdbMovie.backdrop_path,
+      voteAverage: tmdbMovie.vote_average,
+      voteCount: tmdbMovie.vote_count,
+      popularity: tmdbMovie.popularity,
+      adult: tmdbMovie.adult,
+      originalLanguage: tmdbMovie.original_language,
+      budget: tmdbMovie.budget,
+      revenue: tmdbMovie.revenue,
+      status: tmdbMovie.status,
+      tagline: tmdbMovie.tagline,
+      homepage: tmdbMovie.homepage,
+      imdbId: tmdbMovie.imdb_id,
+      productionCompanies: tmdbMovie.production_companies,
+      productionCountries: tmdbMovie.production_countries,
+      spokenLanguages: tmdbMovie.spoken_languages
+    };
+
+    const movie = await Movie.findOneAndUpdate(
+      { tmdbId: tmdbMovie.id },
+      movieData,
+      { upsert: true, new: true, runValidators: true }
+    );
+
+    return movie;
+  } catch (error) {
+    console.error('Error saving movie to database:', error);
+    return null;
+  }
+};
+
+// @desc    Search movies
+// @route   GET /api/movies/search
+// @access  Public
+export const searchMovies = async (req, res, next) => {
+  try {
+    const { query, page = 1 } = req.query;
+
+    if (!query) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    const data = await tmdbRequest('/search/movie', {
+      query,
+      page
+    });
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get movie details
+// @route   GET /api/movies/:id
+// @access  Public
+export const getMovieDetails = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Get movie details from TMDB
+    const movieData = await tmdbRequest(`/movie/${id}`);
+    
+    // Save to database
+    await saveMovieToDb(movieData);
+
+    // Get local movie data (ratings, etc.)
+    const localMovie = await Movie.findOne({ tmdbId: id });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        ...movieData,
+        localData: localMovie
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get popular movies
+// @route   GET /api/movies/popular
+// @access  Public
+export const getPopularMovies = async (req, res, next) => {
+  try {
+    const { page = 1 } = req.query;
+
+    const data = await tmdbRequest('/movie/popular', { page });
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get trending movies
+// @route   GET /api/movies/trending
+// @access  Public
+export const getTrendingMovies = async (req, res, next) => {
+  try {
+    const { timeWindow = 'week' } = req.query;
+
+    const data = await tmdbRequest(`/trending/movie/${timeWindow}`);
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get top rated movies
+// @route   GET /api/movies/top-rated
+// @access  Public
+export const getTopRatedMovies = async (req, res, next) => {
+  try {
+    const { page = 1 } = req.query;
+
+    const data = await tmdbRequest('/movie/top_rated', { page });
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get movie recommendations
+// @route   GET /api/movies/:id/recommendations
+// @access  Public
+export const getMovieRecommendations = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { page = 1 } = req.query;
+
+    const data = await tmdbRequest(`/movie/${id}/recommendations`, { page });
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get movies by genre
+// @route   GET /api/movies/genre/:genreId
+// @access  Public
+export const getMoviesByGenre = async (req, res, next) => {
+  try {
+    const { genreId } = req.params;
+    const { page = 1, sortBy = 'popularity.desc' } = req.query;
+
+    const data = await tmdbRequest('/discover/movie', {
+      with_genres: genreId,
+      page,
+      sort_by: sortBy
+    });
+
+    res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    next(error);
+  }
+};
