@@ -19,4 +19,10 @@ router.get('/genre/:genreId', getMoviesByGenre);
 router.get('/:id', getMovieDetails);
 router.get('/:id/recommendations', getMovieRecommendations);
 
+import { getPersonalRecommendations } from '../controllers/movieController.js';
+import { protect } from '../middleware/auth.js';
+
+router.get('/recommend/personal', protect, getPersonalRecommendations);
+
+
 export default router;

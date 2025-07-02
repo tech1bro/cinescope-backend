@@ -211,3 +211,69 @@ export const getMoviesByGenre = async (req, res, next) => {
     next(error);
   }
 };
+
+
+// @desc    Get personalized recommendations based on user preferences
+// @route   GET /api/movies/recommend/personal
+// @access  Private
+export const getPersonalRecommendations = async (req, res, next) => {
+  try {
+    const user = req.user; // from protect middleware
+    const favoriteGenres = user?.preferences?.favoriteGenres;
+
+    if (!favoriteGenres || favoriteGenres.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No favorite genres found in user preferences'
+      });
+    }
+
+    // Map genre names to TMDB genre IDs (in real app, cache this mapping)
+    const genreMap = {
+      Action: 28,
+      Adventure: 12,
+      Animation: 16,
+      Comedy: 35,
+      Crime: 80,
+      Documentary: 99,
+      Drama: 18,
+      Family: 10751,
+      Fantasy: 14,
+      History: 36,
+      Horror: 27,
+      Music: 10402,
+      Mystery: 9648,
+      Romance: 10749,
+      'Science Fiction': 878,
+      'TV Movie': 10770,
+      Thriller: 53,
+      War: 10752,
+      Western: 37
+    };
+
+    const genreIds = favoriteGenres
+      .map((name) => genreMap[name])
+      .filter((id) => id);
+
+    if (genreIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid genre IDs found for user preferences'
+      });
+    }
+
+    const data = await tmdbRequest('/discover/movie', {
+      with_genres: genreIds.join(','),
+      sort_by: 'popularity.desc',
+      page: 1
+    });
+
+    res.status(200).json({
+      success: true,
+      data,
+      basedOn: favoriteGenres
+    });
+  } catch (error) {
+    next(error);
+  }
+};
