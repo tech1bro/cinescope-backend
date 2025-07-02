@@ -1,23 +1,14 @@
 import axios from 'axios';
 import Movie from '../models/Movie.js';
 
+import dotenv from 'dotenv';
+dotenv.config();
+
+
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
-// Helper function to make TMDB API requests
-const tmdbRequest = async (endpoint, params = {}) => {
-  try {
-    const response = await axios.get(`${TMDB_BASE_URL}${endpoint}`, {
-      params: {
-        api_key: TMDB_API_KEY,
-        ...params
-      }
-    });
-    return response.data;
-  } catch (error) {
-    throw new Error(`TMDB API Error: ${error.message}`);
-  }
-};
+
 
 // Helper function to save/update movie in database
 const saveMovieToDb = async (tmdbMovie) => {
@@ -275,5 +266,29 @@ export const getPersonalRecommendations = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// Helper function to make TMDB API requests
+const tmdbRequest = async (endpoint, params = {}) => {
+  try {
+    if (!TMDB_API_KEY) {
+      throw new Error('TMDB_API_KEY is missing from environment variables');
+    }
+
+    const response = await axios.get(`${TMDB_BASE_URL}${endpoint}`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        ...params,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    const status = error?.response?.status;
+    const message = error?.response?.data?.status_message || error.message;
+
+    console.error(`TMDB API Error (${status}): ${message}`);
+
+    throw new Error(`TMDB API Error: ${message}`);
   }
 };
