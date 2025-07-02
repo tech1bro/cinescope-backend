@@ -1,16 +1,35 @@
 import axios from 'axios';
 import Movie from '../models/Movie.js';
-
 import dotenv from 'dotenv';
 dotenv.config();
-
 
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
+// Helper: Make TMDB API request
+const tmdbRequest = async (endpoint, params = {}) => {
+  try {
+    if (!TMDB_API_KEY) {
+      throw new Error('TMDB_API_KEY is missing from environment variables');
+    }
 
+    const response = await axios.get(`${TMDB_BASE_URL}${endpoint}`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        ...params,
+      },
+    });
 
-// Helper function to save/update movie in database
+    return response.data;
+  } catch (error) {
+    const status = error?.response?.status;
+    const message = error?.response?.data?.status_message || error.message;
+    console.error(`TMDB API Error (${status}): ${message}`);
+    throw new Error(`TMDB API Error: ${message}`);
+  }
+};
+
+// Helper: Save movie to MongoDB
 const saveMovieToDb = async (tmdbMovie) => {
   try {
     const movieData = {
@@ -35,7 +54,7 @@ const saveMovieToDb = async (tmdbMovie) => {
       imdbId: tmdbMovie.imdb_id,
       productionCompanies: tmdbMovie.production_companies,
       productionCountries: tmdbMovie.production_countries,
-      spokenLanguages: tmdbMovie.spoken_languages
+      spokenLanguages: tmdbMovie.spoken_languages,
     };
 
     const movie = await Movie.findOneAndUpdate(
@@ -51,138 +70,74 @@ const saveMovieToDb = async (tmdbMovie) => {
   }
 };
 
-// @desc    Search movies
-// @route   GET /api/movies/search
-// @access  Public
+// CONTROLLERS
+
 export const searchMovies = async (req, res, next) => {
   try {
     const { query, page = 1 } = req.query;
+    if (!query) return res.status(400).json({ success: false, message: 'Search query is required' });
 
-    if (!query) {
-      return res.status(400).json({
-        success: false,
-        message: 'Search query is required'
-      });
-    }
-
-    const data = await tmdbRequest('/search/movie', {
-      query,
-      page
-    });
-
-    res.status(200).json({
-      success: true,
-      data
-    });
+    const data = await tmdbRequest('/search/movie', { query, page });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get movie details
-// @route   GET /api/movies/:id
-// @access  Public
 export const getMovieDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-
-    // Get movie details from TMDB
     const movieData = await tmdbRequest(`/movie/${id}`);
-    
-    // Save to database
     await saveMovieToDb(movieData);
 
-    // Get local movie data (ratings, etc.)
     const localMovie = await Movie.findOne({ tmdbId: id });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        ...movieData,
-        localData: localMovie
-      }
-    });
+    res.status(200).json({ success: true, data: { ...movieData, localData: localMovie } });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get popular movies
-// @route   GET /api/movies/popular
-// @access  Public
 export const getPopularMovies = async (req, res, next) => {
   try {
     const { page = 1 } = req.query;
-
     const data = await tmdbRequest('/movie/popular', { page });
-
-    res.status(200).json({
-      success: true,
-      data
-    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get trending movies
-// @route   GET /api/movies/trending
-// @access  Public
 export const getTrendingMovies = async (req, res, next) => {
   try {
     const { timeWindow = 'week' } = req.query;
-
     const data = await tmdbRequest(`/trending/movie/${timeWindow}`);
-
-    res.status(200).json({
-      success: true,
-      data
-    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get top rated movies
-// @route   GET /api/movies/top-rated
-// @access  Public
 export const getTopRatedMovies = async (req, res, next) => {
   try {
     const { page = 1 } = req.query;
-
     const data = await tmdbRequest('/movie/top_rated', { page });
-
-    res.status(200).json({
-      success: true,
-      data
-    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get movie recommendations
-// @route   GET /api/movies/:id/recommendations
-// @access  Public
 export const getMovieRecommendations = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { page = 1 } = req.query;
-
     const data = await tmdbRequest(`/movie/${id}/recommendations`, { page });
-
-    res.status(200).json({
-      success: true,
-      data
-    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get movies by genre
-// @route   GET /api/movies/genre/:genreId
-// @access  Public
 export const getMoviesByGenre = async (req, res, next) => {
   try {
     const { genreId } = req.params;
@@ -194,32 +149,21 @@ export const getMoviesByGenre = async (req, res, next) => {
       sort_by: sortBy
     });
 
-    res.status(200).json({
-      success: true,
-      data
-    });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     next(error);
   }
 };
 
-
-// @desc    Get personalized recommendations based on user preferences
-// @route   GET /api/movies/recommend/personal
-// @access  Private
 export const getPersonalRecommendations = async (req, res, next) => {
   try {
-    const user = req.user; // from protect middleware
+    const user = req.user;
     const favoriteGenres = user?.preferences?.favoriteGenres;
 
-    if (!favoriteGenres || favoriteGenres.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No favorite genres found in user preferences'
-      });
+    if (!favoriteGenres?.length) {
+      return res.status(400).json({ success: false, message: 'No favorite genres found in user preferences' });
     }
 
-    // Map genre names to TMDB genre IDs (in real app, cache this mapping)
     const genreMap = {
       Action: 28,
       Adventure: 12,
@@ -239,19 +183,10 @@ export const getPersonalRecommendations = async (req, res, next) => {
       'TV Movie': 10770,
       Thriller: 53,
       War: 10752,
-      Western: 37
+      Western: 37,
     };
 
-    const genreIds = favoriteGenres
-      .map((name) => genreMap[name])
-      .filter((id) => id);
-
-    if (genreIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No valid genre IDs found for user preferences'
-      });
-    }
+    const genreIds = favoriteGenres.map(name => genreMap[name]).filter(Boolean);
 
     const data = await tmdbRequest('/discover/movie', {
       with_genres: genreIds.join(','),
@@ -259,36 +194,8 @@ export const getPersonalRecommendations = async (req, res, next) => {
       page: 1
     });
 
-    res.status(200).json({
-      success: true,
-      data,
-      basedOn: favoriteGenres
-    });
+    res.status(200).json({ success: true, data, basedOn: favoriteGenres });
   } catch (error) {
     next(error);
-  }
-};
-
-// Helper function to make TMDB API requests
-const tmdbRequest = async (endpoint, params = {}) => {
-  try {
-    if (!TMDB_API_KEY) {
-      throw new Error('TMDB_API_KEY is missing from environment variables');
-    }
-
-    const response = await axios.get(`${TMDB_BASE_URL}${endpoint}`, {
-      params: {
-        api_key: TMDB_API_KEY,
-        ...params,
-      },
-    });
-    return response.data;
-  } catch (error) {
-    const status = error?.response?.status;
-    const message = error?.response?.data?.status_message || error.message;
-
-    console.error(`TMDB API Error (${status}): ${message}`);
-
-    throw new Error(`TMDB API Error: ${message}`);
   }
 };
