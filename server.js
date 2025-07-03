@@ -93,17 +93,18 @@ const connectDB = async () => {
     process.exit(1);
   }
 };
+
 const startServer = async () => {
   await connectDB();
 
   try {
     app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
     process.exit(1);
   }
 };
 
-export default app;
+startServer();
